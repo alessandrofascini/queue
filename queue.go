@@ -1,3 +1,4 @@
+// deprecated
 package queue
 
 import (
@@ -27,7 +28,6 @@ func New[T any]() *Queue[T] {
 }
 
 // Enqueue appends a new element to the tail of the queue.
-// Returns error if queue is closed. Signals waiting readers when new data is available.
 func (q *Queue[T]) Enqueue(value T) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -151,18 +151,4 @@ func (q *Queue[T]) IsOpen() bool {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
 	return !q.closed
-}
-
-// Custom errors
-var (
-	ErrQueueClosed = &QueueError{"queue is closed"}
-	ErrQueueEmpty  = &QueueError{"queue is empty"}
-)
-
-type QueueError struct {
-	message string
-}
-
-func (e *QueueError) Error() string {
-	return e.message
 }
