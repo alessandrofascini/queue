@@ -5,13 +5,13 @@ import (
 	"sync"
 )
 
-type ConcurrencyInterface[T any] interface {
-	Interface[T]
-	DequeueBlocking(ctx context.Context) (T, error)
-}
+// type ConcurrencyInterface[T any] interface {
+// 	Interface[T]
+// 	DequeueBlocking(ctx context.Context) (T, error)
+// }
 
 type Concurrency[T any] struct {
-	Interface[T]
+	*Closable[T]
 	mu   sync.RWMutex
 	cond *sync.Cond
 	isClosable bool
@@ -19,8 +19,16 @@ type Concurrency[T any] struct {
 
 // Creates a new ConcurrencyQueue
 func NewConcurrency[T any](wrappee Interface[T]) *Concurrency[T] {
-	q := &Concurrency[T]{
-		Interface: wrappee,
+	var q *Concurrency[T] = nil
+	switch w := wrappee.(type) {
+	case *Closable[T]:
+			q = &Concurrency[T]{
+				Closable: w,
+			}
+	default: 
+			q = &Concurrency[T]{
+				Closable: NewClosableQueue(w),
+			}
 	}
 	q.cond = sync.NewCond(&q.mu)
 	return q
@@ -31,7 +39,7 @@ func NewConcurrency[T any](wrappee Interface[T]) *Concurrency[T] {
 func (q *Concurrency[T]) Enqueue(value T) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if err := q.Interface.Enqueue(value); err != nil {
+	if err := q.Closable.Enqueue(value); err != nil {
 		return err
 	}
 	q.cond.Signal()
@@ -63,8 +71,7 @@ func (q *Concurrency[T]) DequeueBlocking(ctx context.Context) (T, error) {
 		}
 
 		// If closed and empty → error.
-		// TODO check this
-		if closableQueue, ok := q.Interface.(*Closable[T]); ok && closableQueue.IsClosed() {
+		if q.IsClosed() {
 			var zero T
 			return zero, ErrQueueClosed
 		}
@@ -81,6 +88,41 @@ func (q *Concurrency[T]) DequeueBlocking(ctx context.Context) (T, error) {
 	}
 }
 
-// TODO: 
-// check with closable
-// on close ->  q.cond.Broadcast()!
+
+func (q *Concurrency[T]) Open() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.Closable.Open()
+}
+
+func (q *Concurrency[T]) Close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.Closable.Close()
+	q.cond.Broadcast()
+}
+
+
+func (q *Concurrency[T]) IsClosed() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.Closable.IsClosed()
+}
+
+func (q *Concurrency[T]) Clear() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.Closable.Clear()
+}
+
+func (q *Concurrency[T]) Len() int {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.Closable.Len()
+}
+
+func (q *Concurrency[T]) IsEmpty() bool {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.Closable.IsEmpty()
+}
